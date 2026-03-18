@@ -2,8 +2,9 @@ import { createReadStream } from "node:fs";
 import { promises as fs } from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT_DIR = process.cwd();
+const ROOT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const HOST = process.env.HOST || "0.0.0.0";
 const PORT = Number(process.env.PORT || 4173);
 
@@ -148,5 +149,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`yojo-portfolio server listening on http://${HOST}:${PORT}`);
+  console.log(
+    `yojo-portfolio server listening on http://${HOST}:${PORT} (root: ${ROOT_DIR})`,
+  );
 });
