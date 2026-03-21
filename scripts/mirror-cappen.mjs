@@ -125,6 +125,49 @@ function rewriteInlineConfig(html) {
     .replace(/https:\/\/cappen\.com(?=\/wp-content\/themes\/cappen\/)/g, "");
 }
 
+function cleanupMirroredHtml(html, route) {
+  const localRoute = route === "/" ? "/" : route;
+
+  return html
+    .replace(
+      /<script type="application\/ld\+json">[\s\S]*?<\/script>/,
+      '<script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"Cappen","url":"/","logo":"/wp-content/uploads/2025/09/Open-Graph-01.png","description":"Cappen"}</script>',
+    )
+    .replace(
+      /var pagelayer_ajaxurl = "https:\/\/cappen\.com\/wp-admin\/admin-ajax\.php\?";/g,
+      'var pagelayer_ajaxurl = window.location.origin + "/wp-admin/admin-ajax.php?";',
+    )
+    .replace(
+      /<!-- Google tag \(gtag\.js\) -->\s*<script async="" src="https:\/\/www\.googletagmanager\.com\/gtag\/js\?id=G-EDYJWHFV67"><\/script>\s*<script>[\s\S]*?<\/script>/g,
+      "",
+    )
+    .replace(/<link rel="EditURI"[^>]+>/g, "")
+    .replace(
+      /(<meta property="og:url" content=")[^"]*(")/g,
+      `$1${localRoute}$2`,
+    )
+    .replace(
+      /(<meta name="twitter:url" content=")[^"]*(")/g,
+      `$1${localRoute}$2`,
+    )
+    .replace(
+      /(<meta property="og:image" content=")[^"]*(")/g,
+      '$1/wp-content/uploads/2025/09/Open-Graph-01.png$2',
+    )
+    .replace(
+      /(<meta property="og:secure_url" content=")[^"]*(")/g,
+      '$1/wp-content/uploads/2025/09/Open-Graph-01.png$2',
+    )
+    .replace(
+      /(<meta name="twitter:image" content=")[^"]*(")/g,
+      '$1/wp-content/uploads/2025/09/Open-Graph-01.png$2',
+    )
+    .replace(
+      /(<meta name="msapplication-TileImage" content=")[^"]*(")/g,
+      '$1/wp-content/uploads/2025/07/favicon-300x300.png$2',
+    );
+}
+
 function collectTextAssetRefs(content, baseUrl) {
   const refs = new Set();
 
@@ -275,7 +318,7 @@ async function processPage(route) {
     }
   });
 
-  const serialized = rewriteInlineConfig($.html());
+  const serialized = cleanupMirroredHtml(rewriteInlineConfig($.html()), route);
   await writeFile(routeToFile(route), serialized);
   await Promise.all(assetDownloads);
   console.log(`page   ${route}`);
