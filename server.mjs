@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const ROOT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const HOST = process.env.HOST || "0.0.0.0";
 const PORT = Number(process.env.PORT || 4173);
+const ASSET_VERSION = (process.env.ASSET_VERSION || "").trim();
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -33,6 +34,32 @@ const MIME_TYPES = {
   ".xml": "application/xml; charset=utf-8",
 };
 
+const VERSIONED_EXTENSIONS = new Set([
+  ".avif",
+  ".css",
+  ".eot",
+  ".gif",
+  ".ico",
+  ".jpeg",
+  ".jpg",
+  ".js",
+  ".json",
+  ".map",
+  ".mp4",
+  ".png",
+  ".spline",
+  ".svg",
+  ".ttf",
+  ".webm",
+  ".webmanifest",
+  ".webp",
+  ".woff",
+  ".woff2",
+]);
+
+const ASSET_URL_PATTERN =
+  /(?<prefix>["'(=:\s])(?<url>(?:\/|\.\.?\/)[^"'()<> \t\r\n]+?\.(?:avif|css|eot|gif|ico|jpe?g|js|json|map|mp4|png|spline|svg|ttf|webm|webmanifest|webp|woff2?)(?:\?[^"'()<> \t\r\n]*)?(?:#[^"'()<> \t\r\n]*)?)/gi;
+
 function sendJson(res, statusCode, payload) {
   const body = JSON.stringify(payload);
   res.writeHead(statusCode, {
@@ -48,6 +75,46 @@ function sendText(res, statusCode, text) {
     "Content-Type": "text/plain; charset=utf-8",
   });
   res.end(text);
+}
+
+function appendAssetVersion(rawUrl) {
+  if (!ASSET_VERSION || !rawUrl) {
+    return rawUrl;
+  }
+
+  if (
+    rawUrl.startsWith("data:") ||
+    rawUrl.startsWith("mailto:") ||
+    rawUrl.startsWith("tel:") ||
+    rawUrl.startsWith("#")
+  ) {
+    return rawUrl;
+  }
+
+  const [pathWithQuery, hash = ""] = rawUrl.split("#");
+  const [pathname, query = ""] = pathWithQuery.split("?");
+  const extension = path.extname(pathname).toLowerCase();
+
+  if (!VERSIONED_EXTENSIONS.has(extension)) {
+    return rawUrl;
+  }
+
+  const params = new URLSearchParams(query);
+  params.set("v", ASSET_VERSION);
+
+  return `${pathname}?${params.toString()}${hash ? `#${hash}` : ""}`;
+}
+
+function rewriteAssetUrls(text) {
+  if (!ASSET_VERSION) {
+    return text;
+  }
+
+  return text.replace(ASSET_URL_PATTERN, (match, _prefix, _url, _offset, _source, groups) => {
+    const prefix = groups?.prefix || "";
+    const url = groups?.url || "";
+    return `${prefix}${appendAssetVersion(url)}`;
+  });
 }
 
 function isPathInsideRoot(targetPath) {
@@ -112,12 +179,33 @@ async function handleStaticRequest(req, res, pathname) {
 
   const extension = path.extname(resolved.filePath).toLowerCase();
   const contentType = MIME_TYPES[extension] || "application/octet-stream";
-
-  res.writeHead(200, {
+  const headers = {
     "Cache-Control": extension === ".html" ? "no-cache" : "public, max-age=31536000, immutable",
-    "Content-Length": resolved.stats.size,
     "Content-Type": contentType,
-  });
+  };
+
+  if (ASSET_VERSION) {
+    headers["X-Asset-Version"] = ASSET_VERSION;
+  }
+
+  if (extension === ".html" || extension === ".css") {
+    const rawText = await fs.readFile(resolved.filePath, "utf8");
+    const body = rewriteAssetUrls(rawText);
+
+    headers["Content-Length"] = Buffer.byteLength(body);
+    res.writeHead(200, headers);
+
+    if (req.method === "HEAD") {
+      res.end();
+      return;
+    }
+
+    res.end(body);
+    return;
+  }
+
+  headers["Content-Length"] = resolved.stats.size;
+  res.writeHead(200, headers);
 
   if (req.method === "HEAD") {
     res.end();
@@ -150,6 +238,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(
-    `yojo-portfolio server listening on http://${HOST}:${PORT} (root: ${ROOT_DIR})`,
+    `yojo-portfolio server listening on http://${HOST}:${PORT} (root: ${ROOT_DIR}, assetVersion: ${ASSET_VERSION || "none"})`,
   );
 });
